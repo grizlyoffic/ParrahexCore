@@ -824,22 +824,37 @@ bool blitOutputToSwapchain(const AhbImage &src) {
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
         0, 0, nullptr, 0, nullptr, 2, pre);
 
-    const VkImageBlit region{
-        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-        .srcOffsets = {{0, 0, 0}, {
-            static_cast<int32_t>(src.extent.width),
-            static_cast<int32_t>(src.extent.height), 1,
-        }},
-        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-        .dstOffsets = {{0, 0, 0}, {
-            static_cast<int32_t>(g.swap.extent.width),
-            static_cast<int32_t>(g.swap.extent.height), 1,
-        }},
-    };
-    g.vk.fn.vkCmdBlitImage(cb,
-        src.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        g.swap.images[imageIdx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1, &region, VK_FILTER_LINEAR);
+    if (src.extent.width == g.swap.extent.width &&
+        src.extent.height == g.swap.extent.height) {
+        const VkImageCopy region{
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .srcOffset = {0, 0, 0},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .dstOffset = {0, 0, 0},
+            .extent = {src.extent.width, src.extent.height, 1},
+        };
+        g.vk.fn.vkCmdCopyImage(cb,
+            src.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            g.swap.images[imageIdx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &region);
+    } else {
+        const VkImageBlit region{
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .srcOffsets = {{0, 0, 0}, {
+                static_cast<int32_t>(src.extent.width),
+                static_cast<int32_t>(src.extent.height), 1,
+            }},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+            .dstOffsets = {{0, 0, 0}, {
+                static_cast<int32_t>(g.swap.extent.width),
+                static_cast<int32_t>(g.swap.extent.height), 1,
+            }},
+        };
+        g.vk.fn.vkCmdBlitImage(cb,
+            src.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            g.swap.images[imageIdx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &region, VK_FILTER_LINEAR);
+    }
 
     VkImageMemoryBarrier srcRelease{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
