@@ -2,33 +2,49 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main" ] # Agar aapki branch ka naam kuch aur hai (jaise master) to woh likhein
+    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    # 1. Pehle aapki apni forked repository (ParrahexCore) ko clone karna
+    - name: Checkout Your Forked App
+      uses: actions/checkout@v4
       with:
-        submodules: recursive
+        path: ParrahexCore
         fetch-depth: 0
-    
-    - name: set up JDK 17
+
+    # 2. Phir main developer ki core Vulkan pipeline repo ko parallel mein download karna
+    - name: Checkout LSFG Vulkan Core
+      uses: actions/checkout@v4
+      with:
+        repository: FrankBarretta/lsfg-vk-android
+        path: lsfg-vk-android
+        ref: main
+
+    # 3. Android SDK/JDK 17 Setup karna
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         cache: gradle
 
+    # 4. Sahi folder ke andar ja kar gradlew ko execution permission dena
     - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      run: chmod +x ParrahexCore/gradlew
 
+    # 5. ParrahexCore folder mein ja kar build command chalana taake CMake ko parallel folder mil jaye
     - name: Build with Gradle
-      run: ./gradlew assembleDebug
+      run: |
+        cd ParrahexCore
+        ./gradlew assembleDebug
 
+    # 6. Final APK generate hone ke baad use GitHub par upload karna
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: ParrahexCore/app/build/outputs/apk/debug/app-debug.apk
