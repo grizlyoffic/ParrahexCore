@@ -127,7 +127,7 @@ fun HomeScreen(nav: NavHostController) {
     if (showCrashDialog) {
         AlertDialog(
             onDismissRequest = { showCrashDialog = false },
-            icon = { Icon(Icons.Filled.BugReport, tint = MaterialTheme.colorScheme.tertiary) },
+            icon = { Icon(imageVector = Icons.Filled.BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
             title = { Text(stringResource(R.string.crash_dialog_title)) },
             text = {
                 Column {
@@ -236,7 +236,6 @@ fun HomeScreen(nav: NavHostController) {
     ).filter { it.route != null || it.onClick != null }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        // Animated gradient background
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -250,14 +249,12 @@ fun HomeScreen(nav: NavHostController) {
         )
 
         Column(modifier = Modifier.fillMaxSize().padding(if (isLandscape) 32.dp else 24.dp)) {
-            // Premium Header
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Glowing logo
                     Box(
                         modifier = Modifier
                             .size(56.dp)
@@ -296,7 +293,6 @@ fun HomeScreen(nav: NavHostController) {
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Premium status pill
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(32.dp))
@@ -305,7 +301,7 @@ fun HomeScreen(nav: NavHostController) {
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Filled.Accessibility, null, Modifier.size(20.dp), tint = if (a11yEnabled) LsfgStatusGood else LsfgStatusWarn)
+                            Icon(imageVector = Icons.Filled.Accessibility, contentDescription = null, tint = if (a11yEnabled) LsfgStatusGood else LsfgStatusWarn)
                             Text(if (a11yEnabled) "Accessibility OK" else "A11Y Required", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (a11yEnabled) LsfgStatusGood else LsfgStatusWarn)
                         }
                     }
@@ -325,7 +321,6 @@ fun HomeScreen(nav: NavHostController) {
                 Spacer(Modifier.height(16.dp))
             }
 
-            // Premium Game Grid
             val columns = if (isLandscape) 4 else 2
             LazyVerticalGrid(
                 columns = GridCells.Fixed(columns),
@@ -343,14 +338,10 @@ fun HomeScreen(nav: NavHostController) {
 
 @Composable
 private fun PremiumTileCard(tile: PremiumTile, nav: NavHostController) {
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(targetValue = if (isPressed) 0.96f else 1f, animationSpec = tween(100), label = "scale")
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(if (tile.id == "session") 160.dp else 140.dp)
-            .scale(scale)
             .clip(RoundedCornerShape(24.dp))
             .background(
                 Brush.verticalGradient(
@@ -360,16 +351,12 @@ private fun PremiumTileCard(tile: PremiumTile, nav: NavHostController) {
                     )
                 )
             )
-            .clickable(
-                onClick = {
-                    tile.onClick?.invoke()
-                    tile.route?.let { nav.navigate(it) }
-                },
-                onPress = { isPressed = true; tryAwaitRelease(); isPressed = false }
-            )
+            .clickable {
+                tile.onClick?.invoke()
+                tile.route?.let { nav.navigate(it) }
+            }
             .padding(20.dp),
     ) {
-        // Glow border effect
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -390,7 +377,6 @@ private fun PremiumTileCard(tile: PremiumTile, nav: NavHostController) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Icon with glowing background
                 Box(
                     modifier = Modifier
                         .size(44.dp)
@@ -405,7 +391,7 @@ private fun PremiumTileCard(tile: PremiumTile, nav: NavHostController) {
                         .background(tile.gradient.first.copy(alpha = 0.4f)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(tile.icon, null, Modifier.size(26.dp), tint = tile.gradient.first)
+                    Icon(imageVector = tile.icon, contentDescription = null, tint = tile.gradient.first)
                 }
 
                 if (tile.badge != null) {
@@ -445,7 +431,6 @@ private fun PremiumTileCard(tile: PremiumTile, nav: NavHostController) {
             }
         }
 
-        // Decorative shine
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -462,3 +447,4 @@ private fun PremiumTileCard(tile: PremiumTile, nav: NavHostController) {
 }
 
 private const val SHIZUKU_PERMISSION_REQUEST = 6104
+
