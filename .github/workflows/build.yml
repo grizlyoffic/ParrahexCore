@@ -9,22 +9,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Pehle aapki apni forked repository (ParrahexCore) ko clone karna
-    - name: Checkout Your Forked App
+    # 1. Seedha main parent repo ko check out karna jisme dono folders submodules hain
+    - name: Checkout Parent Project with Submodules
       uses: actions/checkout@v4
       with:
-        path: ParrahexCore
+        repository: FrankBarretta/LSFG-Android
+        submodules: recursive
         fetch-depth: 0
 
-    # 2. Phir main developer ki core Vulkan pipeline repo ko parallel mein download karna
-    - name: Checkout LSFG Vulkan Core
-      uses: actions/checkout@v4
-      with:
-        repository: FrankBarretta/lsfg-vk-android
-        path: lsfg-vk-android
-        ref: main
+    # 2. Is step mein hum aapki repo (ParrahexCore) ke custom changes ko application folder par apply kar denge
+    - name: Sync Your Fork Changes
+      run: |
+        cd LSFG-Android-Application
+        git remote add fork https://github.com/grizlyoff/ParrahexCore.git
+        git fetch fork
+        git checkout fork/main -- .
+        cd ..
 
-    # 3. Android SDK/JDK 17 Setup karna
+    # 3. Android JDK 17 Environment Setup
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -32,19 +34,19 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # 4. Sahi folder ke andar ja kar gradlew ko execution permission dena
+    # 4. Main gradle folder ke andar ja kar permission grant karna
     - name: Grant execute permission for gradlew
-      run: chmod +x ParrahexCore/gradlew
+      run: chmod +x LSFG-Android-Application/gradlew
 
-    # 5. ParrahexCore folder mein ja kar build command chalana taake CMake ko parallel folder mil jaye
+    # 5. Application ke andar ja kar automatic CMake and native project compile karna
     - name: Build with Gradle
       run: |
-        cd ParrahexCore
+        cd LSFG-Android-Application
         ./gradlew assembleDebug
 
-    # 6. Final APK generate hone ke baad use GitHub par upload karna
+    # 6. Final safe APK ko drop area mein upload karna
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: ParrahexCore/app/build/outputs/apk/debug/app-debug.apk
+        path: LSFG-Android-Application/app/build/outputs/apk/debug/app-debug.apk
