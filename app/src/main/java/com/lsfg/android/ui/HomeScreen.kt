@@ -10,6 +10,9 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,16 +24,25 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,11 +58,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -63,23 +83,30 @@ import com.lsfg.android.session.CrashReporter
 import com.lsfg.android.session.LsfgForegroundService
 import com.lsfg.android.session.PermissionsHelper
 import com.lsfg.android.session.ShizukuCaptureEngine
-import com.lsfg.android.ui.components.IconBadge
-import com.lsfg.android.ui.components.LsfgCard
-import com.lsfg.android.ui.components.LsfgLogoMark
-import com.lsfg.android.ui.components.LsfgSecondaryButton
-import com.lsfg.android.ui.components.SessionCTA
-import com.lsfg.android.ui.components.StatusTone
-import com.lsfg.android.ui.components.StepCard
 import com.lsfg.android.ui.theme.LsfgPrimary
 import com.lsfg.android.ui.theme.LsfgStatusGood
 import com.lsfg.android.ui.theme.LsfgStatusWarn
 import rikka.shizuku.Shizuku
+
+private data class PremiumTile(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val gradient: Pair<Color, Color>,
+    val route: String? = null,
+    val badge: String? = null,
+    val badgeColor: Color = LsfgPrimary,
+    val onClick: (() -> Unit)? = null,
+)
 
 @Composable
 fun HomeScreen(nav: NavHostController) {
     val ctx = LocalContext.current
     val prefs = remember { LsfgPreferences(ctx) }
     val state by produceConfigState(prefs).collectAsState()
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
     var lastError by remember { mutableStateOf<String?>(null) }
     var pendingTargetPkg by remember { mutableStateOf<String?>(null) }
@@ -88,18 +115,10 @@ fun HomeScreen(nav: NavHostController) {
     var crashPreview by remember { mutableStateOf("") }
     var showCrashDetail by remember { mutableStateOf(false) }
     var shizukuPermissionRetry by remember { mutableStateOf<(() -> Unit)?>(null) }
-    var showTutorialPrompt by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (!prefs.isTutorialPromptShown()) {
-            showTutorialPrompt = true
-        }
         if (CrashReporter.hasPendingCrash(ctx)) {
             crashPreview = CrashReporter.readCrashSummary(ctx)
-            // Move the crash file aside immediately so the dialog never
-            // reappears on the next launch (e.g. if the user swipes the app
-            // away instead of tapping a button). The file is still kept
-            // under last_crash_seen.txt so the share chip can attach it.
             CrashReporter.markPendingCrashSeen(ctx)
             showCrashDialog = true
         }
@@ -108,92 +127,41 @@ fun HomeScreen(nav: NavHostController) {
     if (showCrashDialog) {
         AlertDialog(
             onDismissRequest = { showCrashDialog = false },
-            icon = {
-                IconBadge(
-                    icon = Icons.Filled.BugReport,
-                    tint = MaterialTheme.colorScheme.tertiary,
-                    size = 44.dp,
-                )
-            },
+            icon = { Icon(Icons.Filled.BugReport, tint = MaterialTheme.colorScheme.tertiary) },
             title = { Text(stringResource(R.string.crash_dialog_title)) },
             text = {
                 Column {
                     Text(stringResource(R.string.crash_dialog_body))
                     if (showCrashDetail) {
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = crashPreview.take(4000),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text(crashPreview.take(4000), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val intent = CrashReporter.buildShareIntent(ctx)
-                    if (intent != null) {
-                        ctx.startActivity(
-                            Intent.createChooser(intent, "Share crash report")
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
+                    CrashReporter.buildShareIntent(ctx)?.let {
+                        ctx.startActivity(Intent.createChooser(it, "Share crash report").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
                     CrashReporter.clearPendingCrash(ctx)
                     showCrashDialog = false
-                }) { Text(stringResource(R.string.crash_dialog_share)) }
+                }) { Text("Share") }
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { showCrashDetail = !showCrashDetail }) {
-                        Text(stringResource(R.string.crash_dialog_view))
-                    }
+                    TextButton(onClick = { showCrashDetail = !showCrashDetail }) { Text("View") }
                     TextButton(onClick = {
                         CrashReporter.clearPendingCrash(ctx)
                         showCrashDialog = false
-                    }) { Text(stringResource(R.string.crash_dialog_dismiss)) }
+                    }) { Text("Dismiss") }
                 }
             },
         )
     }
 
-    if (showTutorialPrompt) {
-        AlertDialog(
-            onDismissRequest = {
-                prefs.setTutorialPromptShown(true)
-                showTutorialPrompt = false
-            },
-            icon = {
-                IconBadge(
-                    icon = Icons.Filled.School,
-                    tint = LsfgPrimary,
-                    size = 44.dp,
-                )
-            },
-            title = { Text(stringResource(R.string.tutorial_prompt_title)) },
-            text = { Text(stringResource(R.string.tutorial_prompt_body)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    prefs.setTutorialPromptShown(true)
-                    showTutorialPrompt = false
-                    nav.navigate(Routes.TUTORIAL)
-                }) { Text(stringResource(R.string.tutorial_prompt_view)) }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    prefs.setTutorialPromptShown(true)
-                    showTutorialPrompt = false
-                }) { Text(stringResource(R.string.tutorial_prompt_skip)) }
-            },
-        )
-    }
+    val mpm = remember(ctx) { ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager }
 
-    val mpm = remember(ctx) {
-        ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-    }
-
-    val projectionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
+    val projectionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val data = result.data
         val target = pendingTargetPkg
         val source = pendingCaptureSource
@@ -204,12 +172,8 @@ fun HomeScreen(nav: NavHostController) {
             return@rememberLauncherForActivityResult
         }
         val intent = LsfgForegroundService.buildStartIntent(
-            ctx = ctx,
-            resultCode = result.resultCode,
-            resultData = data,
-            targetPackage = target,
-            fpsCounter = prefs.load().fpsCounterEnabled,
-            captureSource = source,
+            ctx, result.resultCode, data, target,
+            prefs.load().fpsCounterEnabled, source
         )
         ContextCompat.startForegroundService(ctx, intent)
     }
@@ -230,451 +194,271 @@ fun HomeScreen(nav: NavHostController) {
     val canStart = state.shadersReady && state.targetPackage != null
     val a11yEnabled = PermissionsHelper.isAccessibilityServiceEnabled(ctx)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .statusBarsPadding()
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        // Top bar: logo + title + quick actions
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        ) {
-            LsfgLogoMark(size = 36.dp)
-            Spacer(Modifier.size(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "Frame generation via Vulkan",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconChip(
-                icon = Icons.Filled.Accessibility,
-                tint = if (a11yEnabled) LsfgStatusGood else LsfgStatusWarn,
-                onClick = {
-                    ctx.startActivity(
-                        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                },
-            )
-            Spacer(Modifier.size(8.dp))
-            IconChip(
-                icon = Icons.Filled.BugReport,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = {
-                    val intent = CrashReporter.buildShareIntent(ctx)
-                    if (intent == null) {
-                        Toast.makeText(ctx, R.string.crash_export_none, Toast.LENGTH_SHORT).show()
-                    } else {
-                        ctx.startActivity(
-                            Intent.createChooser(intent, "Export diagnostic log")
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                    }
-                },
-            )
-        }
-
-        // Hero session card with CTA
-        LsfgCard(accent = true) {
-            SessionCTA(
-                running = false,
-                enabled = canStart,
-                onStart = {
-                    lastError = null
-                    if (!Settings.canDrawOverlays(ctx)) {
-                        val uri = Uri.parse("package:${ctx.packageName}")
-                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, uri)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        ctx.startActivity(intent)
-                        lastError = ctx.getString(R.string.perm_overlay_missing)
-                        return@SessionCTA
-                    }
-                    val targetPkg = state.targetPackage
-                    pendingTargetPkg = targetPkg
-                    if (targetPkg != null) {
-                        ctx.packageManager.getLaunchIntentForPackage(targetPkg)?.let { launch ->
-                            ctx.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        }
-                    }
-                    if (state.captureSource == CaptureSource.SHIZUKU) {
-                        val startShizukuHybrid = {
-                            ContextCompat.startForegroundService(
-                                ctx,
-                                LsfgForegroundService.buildShizukuStartIntent(
-                                    ctx = ctx,
-                                    targetPackage = targetPkg,
-                                    fpsCounter = prefs.load().fpsCounterEnabled,
-                                ),
-                            )
-                        }
-                        val ready = runCatching {
-                            Shizuku.pingBinder() &&
-                                Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-                        }.getOrDefault(false)
-                        if (ready) {
-                            startShizukuHybrid()
-                        } else {
-                            shizukuPermissionRetry = startShizukuHybrid
-                            runCatching { ShizukuCaptureEngine.requestPermission(SHIZUKU_PERMISSION_REQUEST) }
-                                .onFailure {
-                                    lastError = "Shizuku is not running or is too old. Start Shizuku, then try again."
-                                    shizukuPermissionRetry = null
-                                }
-                        }
-                        return@SessionCTA
-                    }
-                    if (state.captureSource == CaptureSource.ROOT) {
-                        ContextCompat.startForegroundService(
-                            ctx,
-                            LsfgForegroundService.buildRootStartIntent(
-                                ctx = ctx,
-                                targetPackage = targetPkg,
-                                fpsCounter = prefs.load().fpsCounterEnabled,
-                            ),
-                        )
-                        return@SessionCTA
-                    }
-                    pendingCaptureSource = CaptureSource.MEDIA_PROJECTION
-                    val captureIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForUserChoice())
-                    } else {
-                        mpm.createScreenCaptureIntent()
-                    }
-                    projectionLauncher.launch(captureIntent)
-                },
-                onStop = { LsfgForegroundService.stop(ctx) },
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(
-                verticalAlignment = Alignment.Top,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .padding(top = 6.dp),
-                )
-                Text(
-                    text = if (canStart) when (state.captureSource) {
-                        CaptureSource.SHIZUKU ->
-                            "Ready to start in Shizuku capture mode. Frames are captured from the target UID so the LSFG overlay is not fed back into itself."
-                        CaptureSource.ROOT ->
-                            "Ready to start in root capture mode. Frames are captured from the target UID with root privilege — no recording dialog."
-                        else ->
-                            "Ready to start. When Android asks what to share, choose the target app, not the entire screen."
-                    } else "Complete steps 1 and 2 below to enable the session.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            if (lastError != null) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = lastError!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-
-        }
-
-        // Limitation notice
-        LsfgCard {
-            Row(verticalAlignment = Alignment.Top) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .padding(top = 8.dp),
-                )
-                Column {
-                    Text(
-                        text = stringResource(R.string.limitation_title).uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LsfgPrimary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.limitation_body),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        if (state.captureSource == CaptureSource.SHIZUKU) {
-            LsfgCard {
-                Column {
-                    Text(
-                        text = "SHIZUKU CAPTURE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LsfgPrimary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Uses Shizuku's privileged UID-filtered capture for the target app, avoiding MediaProjection overlay feedback. Requires the Shizuku app, Shizuku permission, and ADB or wireless debugging active before starting.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        if (state.captureSource == CaptureSource.ROOT) {
-            LsfgCard {
-                Column {
-                    Text(
-                        text = "ROOT CAPTURE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LsfgPrimary,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Uses root UID-filtered capture for the target app — no MediaProjection consent dialog. Requires root access granted to LLS in your root manager (Magisk / KernelSU / APatch).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        // Steps — 5 cards grouped by concept (prerequisite → target → frame gen/pacing →
-        // image quality → display). Post-process accelerators (GPU/NPU/CPU) are no longer
-        // separate top-level steps; they share the "Image quality" screen.
-        val dllStatus = if (state.shadersReady) StatusTone.Good
-        else if (state.dllDisplayName != null) StatusTone.Warn
-        else StatusTone.Neutral
-        val dllLabel = if (state.shadersReady) "Ready"
-        else if (state.dllDisplayName != null) "Pending"
-        else "Required"
-
-        StepCard(
-            number = 1,
-            title = stringResource(R.string.nav_dll),
-            subtitle = if (state.dllDisplayName != null)
-                state.dllDisplayName!!
-            else stringResource(R.string.dll_status_none),
-            status = dllStatus,
-            statusLabel = dllLabel,
+    val tiles = listOf(
+        PremiumTile(
+            id = "session", title = "START SESSION", subtitle = if (canStart) "Ready to launch" else "Complete setup",
+            icon = Icons.Filled.Speed, gradient = LsfgPrimary to Color(0xFF00BCD4),
+            badge = if (canStart) "READY" else "SETUP", badgeColor = if (canStart) LsfgStatusGood else LsfgStatusWarn,
             onClick = {
-                if (!state.legalAccepted) nav.navigate(Routes.LEGAL) else nav.navigate(Routes.DLL)
-            },
-        )
-
-        StepCard(
-            number = 2,
-            title = stringResource(R.string.nav_app),
-            subtitle = state.targetPackage ?: "No app selected",
-            status = if (state.targetPackage != null) StatusTone.Good else StatusTone.Neutral,
-            statusLabel = if (state.targetPackage != null) "Set" else "Required",
-            onClick = { nav.navigate(Routes.APP_PICKER) },
-        )
-
-        val frameGenSummary = if (state.lsfgEnabled) {
-            buildString {
-                append("Multiplier ${state.multiplier}× · flow ${"%.2f".format(state.flowScale)}")
-                if (state.performanceMode) append(" · perf")
-                if (state.hdrMode) append(" · HDR")
-                if (state.antiArtifacts) append(" · anti-artifacts")
-            }
-        } else {
-            "Off — raw capture passthrough"
-        }
-        StepCard(
-            number = 3,
-            title = stringResource(R.string.nav_framegen_pacing),
-            subtitle = frameGenSummary,
-            status = if (state.lsfgEnabled) StatusTone.Good else StatusTone.Neutral,
-            statusLabel = if (state.lsfgEnabled) "On" else "Off",
-            onClick = { nav.navigate(Routes.PARAMS_FRAMEGEN_PACING) },
-        )
-
-        if (SHOW_IMAGE_QUALITY) {
-            val imageQualitySummary = buildString {
-                val parts = mutableListOf<String>()
-                if (state.gpuPostProcessingEnabled) parts += "GPU " + gpuMethodLabel(state.gpuPostProcessingMethod)
-                if (state.npuPostProcessingEnabled) parts += "NPU ${(state.npuAmount * 100f).toInt()}%"
-                if (state.cpuPostProcessingEnabled) parts += "CPU ${(state.cpuStrength * 100f).toInt()}%"
-                if (parts.isEmpty()) append("Off") else append(parts.joinToString(" · "))
-            }
-            val imageQualityOn = state.gpuPostProcessingEnabled ||
-                state.npuPostProcessingEnabled ||
-                state.cpuPostProcessingEnabled
-            StepCard(
-                number = 4,
-                title = stringResource(R.string.nav_image_quality),
-                subtitle = imageQualitySummary,
-                status = if (imageQualityOn) StatusTone.Good else StatusTone.Neutral,
-                statusLabel = if (imageQualityOn) "On" else "Off",
-                onClick = { nav.navigate(Routes.PARAMS_IMAGE_QUALITY) },
-            )
-        }
-
-        val overlayDisplaySummary = buildString {
-            append(
+                lastError = null
+                if (!Settings.canDrawOverlays(ctx)) {
+                    ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    lastError = ctx.getString(R.string.perm_overlay_missing)
+                    return@PremiumTile
+                }
+                val targetPkg = state.targetPackage
+                pendingTargetPkg = targetPkg
+                targetPkg?.let { ctx.packageManager.getLaunchIntentForPackage(it)?.let { launch -> ctx.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
                 when (state.captureSource) {
-                    CaptureSource.SHIZUKU -> "Shizuku capture"
-                    CaptureSource.ROOT -> "Root capture"
-                    else -> "MediaProjection"
-                },
-            )
-            append(" · ")
-            append(
-                when (state.drawerEdge) {
-                    com.lsfg.android.prefs.DrawerEdge.LEFT -> "left handle"
-                    com.lsfg.android.prefs.DrawerEdge.RIGHT -> "right handle"
-                    com.lsfg.android.prefs.DrawerEdge.TOP -> "top handle"
-                    com.lsfg.android.prefs.DrawerEdge.BOTTOM -> "bottom handle"
-                },
-            )
-            if (state.fpsCounterEnabled) append(" · FPS")
-        }
-        StepCard(
-            number = if (SHOW_IMAGE_QUALITY) 5 else 4,
-            title = stringResource(R.string.nav_overlay_display),
-            subtitle = overlayDisplaySummary,
-            status = StatusTone.Neutral,
-            statusLabel = when (state.captureSource) {
-                CaptureSource.SHIZUKU -> "Shizuku"
-                CaptureSource.ROOT -> "Root"
-                else -> "MP"
-            },
-            onClick = { nav.navigate(Routes.OVERLAY_DISPLAY) },
+                    CaptureSource.SHIZUKU -> {
+                        val start = { ContextCompat.startForegroundService(ctx, LsfgForegroundService.buildShizukuStartIntent(ctx, targetPkg, prefs.load().fpsCounterEnabled)) }
+                        if (runCatching { Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED }.getOrDefault(false)) start()
+                        else { shizukuPermissionRetry = start; runCatching { ShizukuCaptureEngine.requestPermission(SHIZUKU_PERMISSION_REQUEST) } }
+                    }
+                    CaptureSource.ROOT -> ContextCompat.startForegroundService(ctx, LsfgForegroundService.buildRootStartIntent(ctx, targetPkg, prefs.load().fpsCounterEnabled))
+                    CaptureSource.MEDIA_PROJECTION -> {
+                        pendingCaptureSource = CaptureSource.MEDIA_PROJECTION
+                        projectionLauncher.launch(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForUserChoice()) else mpm.createScreenCaptureIntent())
+                    }
+                }
+            }
+        ),
+        PremiumTile("dll", "Lossless.dll", state.dllDisplayName ?: "No file selected", Icons.Filled.Android, Color(0xFF4CAF50) to Color(0xFF2E7D32), if (state.legalAccepted) Routes.DLL else Routes.LEGAL, if (state.shadersReady) "READY" else if (state.dllDisplayName != null) "PENDING" else "MISSING", if (state.shadersReady) LsfgStatusGood else LsfgStatusWarn),
+        PremiumTile("target", "Target App", state.targetPackage ?: "No app selected", Icons.Filled.GridView, Color(0xFF2196F3) to Color(0xFF0D47A1), Routes.APP_PICKER, if (state.targetPackage != null) "SET" else "REQUIRED", if (state.targetPackage != null) LsfgStatusGood else LsfgStatusWarn),
+        PremiumTile("framegen", "Frame Gen", if (state.lsfgEnabled) "${state.multiplier}x · ${"%.2f".format(state.flowScale)}" else "OFF", Icons.Filled.Timeline, Color(0xFF9C27B0) to Color(0xFF4A148C), Routes.PARAMS_FRAMEGEN_PACING, if (state.lsfgEnabled) "ON" else "OFF", if (state.lsfgEnabled) LsfgStatusGood else Color(0xFF757575)),
+        PremiumTile("image", "Image Quality", buildString { if (state.gpuPostProcessingEnabled || state.npuPostProcessingEnabled || state.cpuPostProcessingEnabled) append("GPU/NPU/CPU") else append("OFF") }, Icons.Filled.AutoFixHigh, Color(0xFFFF9800) to Color(0xFFE65100), if (SHOW_IMAGE_QUALITY) Routes.PARAMS_IMAGE_QUALITY else null, if (SHOW_IMAGE_QUALITY && (state.gpuPostProcessingEnabled || state.npuPostProcessingEnabled || state.cpuPostProcessingEnabled)) "ON" else "OFF", if (state.gpuPostProcessingEnabled || state.npuPostProcessingEnabled || state.cpuPostProcessingEnabled) LsfgStatusGood else Color(0xFF757575)),
+        PremiumTile("overlay", "Overlay", "${if (state.captureSource == CaptureSource.SHIZUKU) "Shizuku" else if (state.captureSource == CaptureSource.ROOT) "Root" else "MP"} · ${state.drawerEdge.name.lowercase()}", Icons.Filled.TouchApp, Color(0xFF00BCD4) to Color(0xFF006064), Routes.OVERLAY_DISPLAY, when (state.captureSource) { CaptureSource.SHIZUKU -> "SHIZUKU"; CaptureSource.ROOT -> "ROOT"; else -> "MP" }, LsfgPrimary),
+        PremiumTile("auto", "Auto Overlay", "${state.autoEnabledApps.size} app(s)", Icons.Filled.Dashboard, Color(0xFF3F51B5) to Color(0xFF1A237E), Routes.AUTOMATIC_OVERLAY, if (state.autoEnabledApps.isNotEmpty()) "ON" else "OFF", if (state.autoEnabledApps.isNotEmpty()) LsfgStatusGood else Color(0xFF757575)),
+        PremiumTile("tutorial", "Tutorial", "Step-by-step guide", Icons.Filled.School, Color(0xFF009688) to Color(0xFF004D40), Routes.TUTORIAL, "GUIDE", LsfgPrimary),
+        PremiumTile("benchmark", "Benchmark", "Performance test", Icons.Filled.Speed, Color(0xFFE91E63) to Color(0xFF880E4F), Routes.BENCHMARK, "TEST", LsfgPrimary),
+        PremiumTile("legal", "Legal", "License & notices", Icons.Filled.Gavel, Color(0xFF607D8B) to Color(0xFF263238), Routes.LEGAL, "INFO", LsfgPrimary),
+        PremiumTile("export", "Export Log", "Share crash report", Icons.Filled.BugReport, Color(0xFF795548) to Color(0xFF3E2723), null, "DEBUG", LsfgPrimary, onClick = { CrashReporter.buildShareIntent(ctx)?.let { ctx.startActivity(Intent.createChooser(it, "Export log").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } ?: Toast.makeText(ctx, R.string.crash_export_none, Toast.LENGTH_SHORT).show() }),
+    ).filter { it.route != null || it.onClick != null }
+
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // Animated gradient background
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(LsfgPrimary.copy(alpha = 0.08f), Color.Transparent, Color.Transparent),
+                        radius = 1200f,
+                        center = Offset(200f, 200f)
+                    )
+                )
         )
 
-        val autoCount = state.autoEnabledApps.size
-        val autoSubtitle = if (autoCount == 0) {
-            stringResource(R.string.automatic_overlay_count_zero)
-        } else {
-            stringResource(R.string.automatic_overlay_count_n, autoCount)
-        }
-        StepCard(
-            number = if (SHOW_IMAGE_QUALITY) 6 else 5,
-            title = stringResource(R.string.nav_automatic_overlay),
-            subtitle = autoSubtitle,
-            status = if (autoCount > 0) StatusTone.Good else StatusTone.Neutral,
-            statusLabel = if (autoCount > 0) "On" else "Off",
-            onClick = { nav.navigate(Routes.AUTOMATIC_OVERLAY) },
-        )
-
-        // Footer actions
-        LsfgCard {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "MORE",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = LsfgPrimary,
-                )
-                LsfgSecondaryButton(
-                    text = stringResource(R.string.nav_tutorial),
-                    onClick = { nav.navigate(Routes.TUTORIAL) },
-                    leadingIcon = Icons.Filled.School,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                LsfgSecondaryButton(
-                    text = stringResource(R.string.benchmark_home_button),
-                    onClick = { nav.navigate(Routes.BENCHMARK) },
-                    leadingIcon = Icons.Filled.Speed,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                LsfgSecondaryButton(
-                    text = "Re-read legal notice",
-                    onClick = { nav.navigate(Routes.LEGAL) },
-                    leadingIcon = Icons.Filled.Gavel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                LsfgSecondaryButton(
-                    text = stringResource(R.string.crash_export_log),
-                    onClick = {
-                        val intent = CrashReporter.buildShareIntent(ctx)
-                        if (intent == null) {
-                            Toast.makeText(ctx, R.string.crash_export_none, Toast.LENGTH_SHORT).show()
-                        } else {
-                            ctx.startActivity(
-                                Intent.createChooser(intent, "Export diagnostic log")
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        Column(modifier = Modifier.fillMaxSize().padding(if (isLandscape) 32.dp else 24.dp)) {
+            // Premium Header
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Glowing logo
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                Brush.horizontalGradient(listOf(LsfgPrimary, LsfgPrimary.copy(alpha = 0.6f)))
                             )
+                            .padding(2.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surface),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("LF", fontWeight = FontWeight.Bold, fontSize = 24.sp, color = LsfgPrimary)
                         }
-                    },
-                    leadingIcon = Icons.Filled.BugReport,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            stringResource(R.string.app_name),
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            letterSpacing = (-0.5).sp,
+                        )
+                        Text(
+                            "Frame Generation via Vulkan",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Premium status pill
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(32.dp))
+                            .background(if (a11yEnabled) LsfgStatusGood.copy(alpha = 0.15f) else LsfgStatusWarn.copy(alpha = 0.15f))
+                            .clickable { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.Accessibility, null, Modifier.size(20.dp), tint = if (a11yEnabled) LsfgStatusGood else LsfgStatusWarn)
+                            Text(if (a11yEnabled) "Accessibility OK" else "A11Y Required", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (a11yEnabled) LsfgStatusGood else LsfgStatusWarn)
+                        }
+                    }
+                }
+            }
+
+            if (lastError != null) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f))
+                        .padding(16.dp)
+                ) {
+                    Text(lastError!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer)
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // Premium Game Grid
+            val columns = if (isLandscape) 4 else 2
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(tiles, key = { it.id }) { tile ->
+                    PremiumTileCard(tile = tile, nav = nav)
+                }
             }
         }
-
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "v${versionName(ctx)}",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontWeight = FontWeight.Normal,
-                fontSize = 11.sp,
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-        )
     }
 }
 
 @Composable
-private fun IconChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    onClick: () -> Unit,
-) {
+private fun PremiumTileCard(tile: PremiumTile, nav: NavHostController) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(targetValue = if (isPressed) 0.96f else 1f, animationSpec = tween(100), label = "scale")
+
     Box(
         modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
+            .fillMaxWidth()
+            .height(if (tile.id == "session") 160.dp else 140.dp)
+            .scale(scale)
+            .clip(RoundedCornerShape(24.dp))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        tile.gradient.first.copy(alpha = 0.25f),
+                        tile.gradient.second.copy(alpha = 0.15f)
+                    )
+                )
+            )
+            .clickable(
+                onClick = {
+                    tile.onClick?.invoke()
+                    tile.route?.let { nav.navigate(it) }
+                },
+                onPress = { isPressed = true; tryAwaitRelease(); isPressed = false }
+            )
+            .padding(20.dp),
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(20.dp),
+        // Glow border effect
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(tile.gradient.first.copy(alpha = 0.3f), Color.Transparent, tile.gradient.second.copy(alpha = 0.3f))
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Icon with glowing background
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(tile.gradient.first.copy(alpha = 0.2f))
+                        .blur(4.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(tile.gradient.first.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(tile.icon, null, Modifier.size(26.dp), tint = tile.gradient.first)
+                }
+
+                if (tile.badge != null) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(tile.badgeColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                    ) {
+                        Text(
+                            tile.badge,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = tile.badgeColor,
+                            letterSpacing = 0.5.sp,
+                        )
+                    }
+                }
+            }
+
+            Column {
+                Text(
+                    tile.title,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    letterSpacing = (-0.3).sp,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    tile.subtitle,
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        // Decorative shine
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(80.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(Color.White.copy(alpha = 0.1f), Color.Transparent),
+                        radius = 100f
+                    )
+                )
         )
     }
 }
 
-private fun versionName(ctx: Context): String {
-    return runCatching {
-        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "—"
-    }.getOrDefault("—")
-}
-
 private const val SHIZUKU_PERMISSION_REQUEST = 6104
-
-private fun gpuMethodLabel(m: com.lsfg.android.prefs.GpuPostProcessingMethod): String = when (m) {
-    com.lsfg.android.prefs.GpuPostProcessingMethod.FSR1_EASU_RCAS -> "FSR1"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.AMD_CAS -> "CAS"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.NVIDIA_NIS -> "NIS"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.LANCZOS -> "Lanczos"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.BICUBIC -> "Bicubic"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.BILINEAR -> "Bilinear"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.CATMULL_ROM -> "Catmull"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.MITCHELL_NETRAVALI -> "Mitchell"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.ANIME4K_ULTRAFAST -> "Anime4K Fast"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.ANIME4K_RESTORE -> "Anime4K Restore"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.XBRZ -> "xBRZ"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.EDGE_DIRECTED -> "Edge"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.UNSHARP_MASK -> "Unsharp"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.LUMA_SHARPEN -> "Luma"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.CONTRAST_ADAPTIVE -> "Contrast"
-    com.lsfg.android.prefs.GpuPostProcessingMethod.DEBAND -> "Deband"
-}
