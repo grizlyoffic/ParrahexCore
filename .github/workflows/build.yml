@@ -9,19 +9,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Sabse pehle aapki apni repository ko poore access ke sath main runner par lana
     - name: Checkout Your Forked App
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
-    # 2. Parallel folder mein automatic public core repo ko submodules ke sath single line mein clone karna
     - name: Clone LSFG Vulkan Core Parallelly
       run: |
         cd ..
         git clone --recursive https://github.com/FrankBarretta/lsfg-vk-android.git lsfg-vk-android
 
-    # 3. Android SDK aur Java 17 Setup karna
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -29,17 +26,14 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # 4. Gradle file ko execute karne ki permissions dena
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    # 5. Final build command (Ab CMake ko barabar wale folder mein sources mil jayengi)
     - name: Build with Gradle
       run: ./gradlew assembleDebug
 
-    # 6. Bani hui APK file ko safely save area mein upload karna
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: LSFG-App-Debug
+        path: "**/build/outputs/apk/debug/*.apk"
